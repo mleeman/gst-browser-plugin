@@ -35,6 +35,24 @@
 #include <libgen.h>
 #endif
 
+enum {
+  STATE_NULL,
+  STATE_READY,
+  STATE_PAUSED,
+  STATE_PLAYING,
+  STATE_STOPPED,
+  STATE_EOS
+};
+
+static const gchar *state_strings[] = {
+  "NULL",
+  "READY",
+  "PAUSED",
+  "PLAYING",
+  "STOPPED",
+  "EOS"
+};
+
 typedef struct _InvokeData {
   NPP instance;
   NPObject *object;
@@ -109,7 +127,7 @@ NPP_New (NPMIMEType plugin_type, NPP instance, uint16_t mode,
   pdata->player = player;
   pdata->errorHandler = NULL;
   pdata->stateHandler = NULL;
-  pdata->state = g_strdup ("STOPPED");
+  pdata->state = state_strings[STATE_STOPPED];
   pdata->playback_queue = g_async_queue_new ();
 #ifdef PLAYBACK_THREAD_POOL
   pdata->pending_commands = 0;
@@ -135,10 +153,10 @@ NPP_New (NPMIMEType plugin_type, NPP instance, uint16_t mode,
   state3->instance = instance;
   state4->instance = instance;
 
-  state1->state = "PLAYING";
-  state2->state = "PAUSED";
-  state3->state = "STOPPED";
-  state4->state = "EOS";
+  state1->state = state_strings[STATE_PLAYING];
+  state2->state = state_strings[STATE_PAUSED];
+  state3->state = state_strings[STATE_STOPPED];
+  state4->state = state_strings[STATE_EOS];
 
   g_signal_connect_data (player, "playing",
       G_CALLBACK(on_state_cb), state1, (GClosureNotify) g_free, 0);
@@ -193,7 +211,7 @@ NPP_New (NPMIMEType plugin_type, NPP instance, uint16_t mode,
     g_object_set (player, "video-sink", "osxvideosink", NULL);
     g_object_set (player, "xid", (gulong) pdata->clippingView, NULL);
   }
-  
+
 #endif
 
   /* FIXME: set this to avoid the .so from being unloaded. GType breaks badly if
@@ -668,6 +686,7 @@ void on_error_cb (GbpPlayer *player, GError *error, const char *debug,
   debug_copy = (char *) NPN_MemAlloc (strlen (debug) + 1);
   strcpy (debug_copy, debug);
 
+  /* STRINGZ_TO_PNVARIANT is a macro that does not take ownership. */_
   STRINGZ_TO_NPVARIANT (message_copy, invoke_data->args[0]);
   STRINGZ_TO_NPVARIANT (debug_copy, invoke_data->args[1]);
 
@@ -691,10 +710,7 @@ void on_state_cb (GbpPlayer *player, gpointer user_data)
     [data->layer setNeedsDisplay];
 #endif
 
-  if (data->state != NULL)
-    g_free (data->state);
-
-  data->state = g_strdup (state_closure->state);
+  data->state = state_closure->state;
 
   if (data->stateHandler == NULL)
     return;
@@ -720,10 +736,6 @@ npp_gbp_data_free (NPPGbpData *data)
   if (data->stateHandler != NULL)
     NPN_ReleaseObject (data->stateHandler);
   data->stateHandler = NULL;
-
-  if (data->state)
-    g_free (data->state);
-  data->state = NULL;
 
   if (data->playback_queue)
     g_async_queue_unref (data->playback_queue);
